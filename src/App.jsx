@@ -141,7 +141,7 @@ function FileExplorerView({ rootPath = '', onItemSelect, selectedItem }) {
     }, [rootPath]);
 
     const explorerStyles = {
-        wrapper: { height: "100%", width: "100%", background: 'transparent', color: 'var(--text-normal)', display: 'flex', flexDirection: 'column' },
+        wrapper: { flex: 1, minHeight: 0, width: "100%", background: 'transparent', color: 'var(--text-normal)', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
         content: { padding: '8px', flex: 1, overflowY: 'auto' }
     };
 

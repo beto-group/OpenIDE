@@ -16,7 +16,10 @@ cssclasses:
 ---
 
 \`\`\`datacorejsx
-const { View } = await dc.require(dc.resolvePath("OPEN IDE/src/index.jsx"));
-return <View folderPath={dc.resolvePath("OPEN IDE")} />;
+const activeFile = dc.resolvePath("OPEN IDE") || "_RESOURCES/DATACORE/_DONE/OPEN IDE/OPEN IDE.md";
+const folderPath = activeFile.substring(0, activeFile.lastIndexOf('/'));
+
+const { View } = await dc.require(folderPath + "/src/index.jsx");
+return <View folderPath={folderPath} />;
 \`\`\`
 ```

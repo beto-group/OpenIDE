@@ -2,7 +2,7 @@
  * OpenIDE Bootstrapper
  * Implements Safe Agent recovery, FullTab view hijacking, and stylesheet overlays.
  */
-async function View({ folderPath }) {
+function View({ folderPath }) {
     const { useState, useEffect, useRef } = dc;
 
     // 1. Initialize Safe Agent immediately
@@ -105,92 +105,141 @@ async function View({ folderPath }) {
         const [isFullTab, setIsFullTab] = useState(true);
         const [hijacked, setHijacked] = useState(false);
         const rootRef = useRef(null);
+        const stateRefs = useRef({}).current;
+        const componentId = useRef('openide-' + Math.random().toString(36).substr(2, 5)).current;
 
-        const FULLTAB_ID = 'fulltab-610-openide';
-
-        // Layer 1 — CSS suppression
-        useEffect(() => {
-            if (!isFullTab) return;
-            let styleEl = document.getElementById(FULLTAB_ID);
-            if (!styleEl) {
-                styleEl = document.createElement('style');
-                styleEl.id = FULLTAB_ID;
-                styleEl.innerHTML = `
-                    body > .app-container .status-bar,
-                    .status-bar,
-                    .inline-title,
-                    .view-footer,
-                    .workspace-leaf-content-footer,
-                    .mod-footer,
-                    .embedded-backlinks {
-                        display: none !important;
-                    }
-                    .workspace-leaf-content,
-                    .markdown-preview-view,
-                    .cm-scroller {
-                        overflow: hidden !important;
-                        padding: 0 !important;
-                        margin: 0 !important;
-                        border-radius: 0 !important;
-                    }
-                    .markdown-preview-section {
-                        padding: 0 !important;
-                        max-width: 100% !important;
-                    }
-                    .markdown-preview-sizer {
-                        padding: 0 !important;
-                        margin: 0 auto !important;
-                        min-height: unset !important;
-                    }
-                `;
-                document.head.appendChild(styleEl);
-            }
-            return () => {
-                const el = document.getElementById(FULLTAB_ID);
-                if (el) el.remove();
-            };
-        }, [isFullTab]);
-
-        // Layer 2 — DOM reparenting
         useEffect(() => {
             if (!isFullTab) {
                 setHijacked(false);
                 return;
             }
-            const root = rootRef.current;
-            if (!root) return;
 
+            const container = rootRef.current;
+            if (!container) return;
+
+            let poller;
             let attempts = 0;
-            const hijack = () => {
-                try {
-                    const leaf = root.closest('.workspace-leaf');
-                    const scroller = leaf?.querySelector('.cm-scroller') || leaf?.querySelector('.markdown-preview-view');
-                    if (scroller) {
-                        scroller.appendChild(root);
-                        Object.assign(root.style, {
-                            position: 'absolute',
-                            top: '0', left: '0',
-                            width: '100%', height: '100%',
-                            zIndex: '10',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            overflow: 'hidden',
-                            visibility: 'visible',
-                        });
-                        setHijacked(true);
-                        return true;
-                    }
-                } catch (e) { }
-                return false;
+
+            const tryHijack = () => {
+                // 1. Locate nearest leaf content wrapper
+                const leaf = container.closest('.workspace-leaf-content') || container.closest('.workspace-leaf');
+                if (!leaf) return false;
+
+                // 2. Select the view-content container below the header
+                const contentWrapper = leaf.querySelector(':scope > .view-content') || leaf.querySelector('.view-content') || leaf;
+                const currentParent = container.parentNode;
+                if (!currentParent || currentParent === contentWrapper) return false;
+
+                // 3. Setup placeholder in standard DOM layout
+                stateRefs.originalParent = currentParent;
+                const placeholder = document.createElement("div");
+                placeholder.style.display = "none";
+                if (container.nextSibling) {
+                    currentParent.insertBefore(placeholder, container.nextSibling);
+                } else {
+                    currentParent.appendChild(placeholder);
+                }
+                stateRefs.placeholder = placeholder;
+
+                // 4. Inject impeccable status bar suppression stylesheet
+                const styleId = `impeccable-status-${componentId}`;
+                let styleEl = document.getElementById(styleId);
+                if (!styleEl) {
+                    styleEl = document.createElement('style');
+                    styleEl.id = styleId;
+                    styleEl.innerHTML = `
+                        /* Hide global status bar and view footers */
+                        .status-bar, .view-footer, .workspace-leaf-content-footer { 
+                            display: none !important; 
+                        }
+                        
+                        /* Expand workspace-leaf-content to edge-to-edge container */
+                        .workspace-leaf-content { 
+                            padding: 0 !important; 
+                            margin: 0 !important; 
+                            border-radius: 0 !important; 
+                        }
+                    `;
+                    document.head.appendChild(styleEl);
+                }
+
+                stateRefs.parentPositionInfo = {
+                    element: contentWrapper,
+                    originalInlinePosition: contentWrapper.style.position,
+                };
+
+                if (window.getComputedStyle(contentWrapper).position === 'static') {
+                    contentWrapper.style.position = "relative";
+                }
+
+                // 5. Append component to view-content
+                contentWrapper.appendChild(container);
+
+                requestAnimationFrame(() => {
+                    Object.assign(contentWrapper.style, {
+                        padding: "0",
+                        margin: "0",
+                        height: "100%",
+                        width: "100%",
+                        display: "block",
+                        overflow: "hidden"
+                    });
+                });
+
+                Object.assign(container.style, {
+                    position: "absolute",
+                    top: "0",
+                    left: "0",
+                    width: "100%",
+                    height: "100%",
+                    zIndex: "9998",
+                    overflow: "hidden",
+                    backgroundColor: "var(--background-primary)",
+                    display: "flex",
+                    flexDirection: "column",
+                    visibility: "visible",
+                });
+                setHijacked(true);
+                return true;
             };
 
-            if (hijack()) return;
+            // Run first try
+            if (!tryHijack()) {
+                poller = setInterval(() => {
+                    attempts++;
+                    if (tryHijack() || attempts > 100) {
+                        clearInterval(poller);
+                    }
+                }, 16);
+            }
 
-            const poller = setInterval(() => {
-                if (hijack() || attempts++ > 100) clearInterval(poller);
-            }, 16);
+            // 6. Graceful cleanup on unmount or fulltab minimize toggle
+            return () => {
+                if (poller) clearInterval(poller);
 
-            return () => clearInterval(poller);
+                if (stateRefs.placeholder?.parentNode) {
+                    stateRefs.placeholder.parentNode.replaceChild(container, stateRefs.placeholder);
+                } else if (stateRefs.originalParent) {
+                    stateRefs.originalParent.appendChild(container);
+                }
+
+                const styleId = `impeccable-status-${componentId}`;
+                const el = document.getElementById(styleId);
+                if (el) el.remove();
+
+                if (stateRefs.parentPositionInfo?.element) {
+                    const { element, originalInlinePosition } = stateRefs.parentPositionInfo;
+                    element.style.position = originalInlinePosition || '';
+                    element.style.padding = '';
+                    element.style.margin = '';
+                    element.style.height = '';
+                    element.style.width = '';
+                    element.style.overflow = '';
+                }
+
+                container.removeAttribute("style");
+                setHijacked(false);
+            };
         }, [isFullTab]);
 
         if (isFullTab) {
