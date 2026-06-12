@@ -3,7 +3,7 @@ author: beto.group
 contributor: []
 version: 1.0.3
 id: openide-610
-name: OPEN IDE
+name: OpenIDE
 description: A bridge utility that allows users to browse the vault and open files or folders directly in their preferred external code editor (VS Code, Cursor, etc.).
 status: stable
 complexity: intermediate
@@ -15,8 +15,8 @@ repository:
   - https://github.com/beto-group/OpenIDE
 missing: []
 resources:
-  - assets/preview.webp
-  - assets/preview.gif
+  - assets/image/preview_1.webp
+  - assets/videos/preview.gif
   - example/EXAMPLE.md
 type: DatacoreComponent
 target: Datacore
